@@ -1,4 +1,4 @@
-package type_conv
+package utils
 
 import (
 	"errors"
