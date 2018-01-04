@@ -1,37 +1,31 @@
 package main
 
-import (
-	"fmt"
-	"log"
-	"net/http"
-	"reflect"
-	"toolkit/net"
-
-	"github.com/julienschmidt/httprouter"
-)
-
 func main() {
-	fmt.Println("----")
-	a := make([]int, 0)
-	for _, v := range a {
-		fmt.Println(v)
-	}
+	// fmt.Println("----")
+	// a := make([]int, 0)
+	// for _, v := range a {
+	// 	fmt.Println(v)
+	// }
 
-	type T struct {
-		A int
-		B string
-	}
-	t := T{23, "skidoo"}
-	s := reflect.ValueOf(&t).Elem()
-	typeOfT := s.Type()
-	for i := 0; i < s.NumField(); i++ {
-		f := s.Field(i)
-		fmt.Printf("%d: %s %s = %v\n", i, typeOfT.Field(i).Name, f.Type(), f.Interface())
-	}
+	// type T struct {
+	// 	A int
+	// 	B string
+	// }
+	// t := T{23, "skidoo"}
+	// s := reflect.ValueOf(&t).Elem()
+	// typeOfT := s.Type()
+	// for i := 0; i < s.NumField(); i++ {
+	// 	f := s.Field(i)
+	// 	fmt.Printf("%d: %s %s = %v\n", i, typeOfT.Field(i).Name, f.Type(), f.Interface())
+	// }
 
-	router := httprouter.New()
-	router.GET("/", net.Index)
-	router.GET("/hello/:name", net.Hello)
+	// router := httprouter.New()
+	// router.GET("/", net.Index)
+	// router.GET("/hello/:name", net.Hello)
+	//
+	// log.Fatal(http.ListenAndServe(":8080", router))
 
-	log.Fatal(http.ListenAndServe(":8080", router))
+	// sli := []int{1, 5, 23, 6, 2, 65, 17, 123, 4, 9, 2, 234}
+	// utils.ListSort(sli, false)
+	// fmt.Println(sli)
 }
