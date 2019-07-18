@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
@@ -19,6 +20,9 @@ func ToInt(origin interface{}) (int, error) {
 	case []byte:
 		x, err := strconv.Atoi(string(v))
 		return x, err
+	case string:
+		x, err := strconv.Atoi(v)
+		return x, err
 	case nil:
 		return 0, ErrNil
 	}
@@ -31,6 +35,9 @@ func ToInt64(origin interface{}) (int64, error) {
 		return v, nil
 	case []byte:
 		x, err := strconv.ParseInt(string(v), 10, 64)
+		return x, err
+	case string:
+		x, err := strconv.ParseInt(v, 10, 64)
 		return x, err
 	case nil:
 		return 0, ErrNil
@@ -49,6 +56,9 @@ func ToUint64(origin interface{}) (uint64, error) {
 	case []byte:
 		x, err := strconv.ParseUint(string(v), 10, 64)
 		return x, err
+	case string:
+		x, err := strconv.ParseUint(v, 10, 64)
+		return x, err
 	case nil:
 		return 0, ErrNil
 	}
@@ -60,11 +70,11 @@ func ToFloat64(origin interface{}) (float64, error) {
 	case []byte:
 		x, err := strconv.ParseFloat(string(v), 64)
 		return x, err
+	case string:
+		r, err := strconv.ParseFloat(v, 64)
+		return r, err
 	case nil:
 		return 0, ErrNil
-	case string:
-		r, err := strconv.ParseFloat(string(v), 64)
-		return r, err
 	}
 	return 0, fmt.Errorf("Type Converter: unexpected type for Float64, got type %T", origin)
 }
@@ -105,8 +115,20 @@ func ToBool(origin interface{}) (bool, error) {
 		return v != 0, nil
 	case []byte:
 		return strconv.ParseBool(string(v))
+	case string:
+		return strconv.ParseBool(v)
 	case nil:
 		return false, ErrNil
 	}
 	return false, fmt.Errorf("Type Converter: unexpected type for Bool, got type %T", origin)
+}
+
+func Hex2Bytes(hexStr string) ([]byte, error) {
+	// hexStr := "45684149354a454745506952426867424950544577646f46"
+	return hex.DecodeString(hexStr)
+}
+
+func Bytes2Hex(bs []byte) string {
+	// src := []byte("Hello")
+	return hex.EncodeToString(bs)
 }
