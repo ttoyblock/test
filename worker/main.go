@@ -29,7 +29,7 @@ func main() {
 	conf := map[string]interface{}{
 		"topic":     "wallet_pay_queue",
 		"groupName": "wallet_consumer",
-		"broker":    "47.95.14.131:9182",
+		"broker":    "localhost:9182",
 	}
 	csm := xkafka.NewConsumer()
 	csm.Init(conf)
