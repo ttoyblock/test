@@ -2,33 +2,22 @@ package func_stuff
 
 import (
 	"fmt"
+
+	"toolkit/worker/utils"
 )
 
 // --------------------------------------------
 // The functions registered here should
 // 1. be idempotent
-// 2. have two return values
-//     - the type of first value doesn't matter
-//     - the second should be error
+// 2. return
+//     - at least one return value
+//     - the last one must be an error
 // 3. have parameters in these type
-//     - bool
-//     - int
-//     - int8
-//     - int16
-//     - int32
-//     - int64
-//     - uint
-//     - uint8
-//     - uint16
-//     - uint32
-//     - uint64
-//     - float32
-//     - float64
-//     - string
+//     - any type
 // --------------------------------------------
 
 var funcsMap = map[string]interface{}{
-// utils.GetFunctionName(sms.SendSmsWithYunpian):                 sms.SendSmsWithYunpian,
+	utils.GetFunctionName(TestFoo): TestFoo,
 }
 
 func GetRegisteredFunc(registerdFuncName string) (interface{}, error) {
@@ -38,4 +27,9 @@ func GetRegisteredFunc(registerdFuncName string) (interface{}, error) {
 		return nil, err
 	}
 	return registerdFunc, nil
+}
+
+func TestFoo(a int64) error {
+	fmt.Println("-------testfoo res", "a", a)
+	return nil
 }

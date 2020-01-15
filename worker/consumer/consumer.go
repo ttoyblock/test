@@ -4,13 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"reflect"
-
-	log "github.com/Sirupsen/logrus"
-
 	"toolkit/worker/func_stuff"
 	"toolkit/worker/job"
-	"toolkit/worker/utils"
+	"toolkit/xkafka"
 
 	"github.com/Shopify/sarama"
 )
@@ -18,10 +16,29 @@ import (
 // ----------------------------------------------------
 // Consumer: excute the async job in worker application
 // ----------------------------------------------------
-func JobExecutor(message *sarama.ConsumerMessage) error {
+func LaunchConsumer(conf map[string]interface{}) {
+	kafkaConsumer := xkafka.NewConsumer()
+	kafkaConsumer.Init(conf)
+	defer kafkaConsumer.Close()
+
+	kafkaConsumer.RunByCall(func(msg *sarama.ConsumerMessage) bool {
+		b, err := JobExecutor(msg)
+		checkErr(err)
+		return b
+	})
+}
+
+func checkErr(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func JobExecutor(msg *sarama.ConsumerMessage) (ok bool, err error) {
 	defer func() {
 		// Recover from panic and set err.
 		if e := recover(); e != nil {
+
 			var perr error
 			switch e := e.(type) {
 			default:
@@ -37,49 +54,24 @@ func JobExecutor(message *sarama.ConsumerMessage) error {
 			}
 
 			formatedErr := fmt.Errorf("[Panic] panic occurs while execute scheduler job with msg: %v", perr)
-			fmt.Println(formatedErr, formatedErr)
+			log.Fatalln(formatedErr)
 		}
 	}()
+	log.Println("JobExecutor NewMessage", string(msg.Value))
 
-	var err error
-	// Job unmarshaling
 	var job job.Job
-	err = json.Unmarshal(message.Value, &job)
-	// Job unmarshaling failed, mark the correspond message as finish, and log err
+	err = json.Unmarshal(msg.Value, &job)
 	if err != nil {
-		formatedErr := fmt.Errorf("Consumer unmarshal error: %v, mark the message as consumed.", err)
-		log.Error(formatedErr)
-		// message.Finish()
-		return nil
+		err = fmt.Errorf("Consumer unmarshal error: %v, mark the message as consumed.", err)
+		log.Fatalln(err)
+		return
 	}
 
-	// Will not retry job while message attmpts exceed job's MaxRetry
-	// if int(message.Version) > job.MaxRetry {
-	// 	message.Finish()
-	// 	return nil
-	// }
-
-	// Execute the function
 	err = FuncExecutor(&job)
-	if err == nil {
-		// message.Finish()
-	} else {
-		// Will not retry job while job markd Retry field with false
-		if !job.Retry {
-			formatedErr := fmt.Errorf("Consumer func executor error: %v, this is a non-retry message, mark the message as consumed.", err)
-			log.Error(formatedErr)
-			// message.Finish()
-			return nil
-		}
-
-		// TODO: 重试机制
-		// message.Requeue(-1)
-
-		formatedErr := fmt.Errorf("Consumer func executor error: %v, requeue message instantly.", err)
-		log.Error(formatedErr)
+	if err != nil {
+		log.Fatalln("FuncExecutor err", err)
 	}
-
-	return err
+	return err == nil, err
 }
 
 // Ref. [https://github.com/RichardKnop/machinery/blob/bae667d798a33928db0349a5e2d098d20ce3b301/v1/worker.go]
@@ -89,18 +81,29 @@ func FuncExecutor(job *job.Job) error {
 		return err
 	}
 
-	reflectedFunc := reflect.ValueOf(registeredFunc)
-	reflectedArgs, err := utils.GetDecodedArgs(job.Args)
+	funcValue := reflect.ValueOf(registeredFunc)
+
+	var inStart = 0
+	var inValue []reflect.Value
+
+	inValue, err = utils.GetCallInArgs(funcValue, job.Args, inStart)
 	if err != nil {
-		e := fmt.Errorf("Decode args: %v for func: %s  args: %v", err, job.FuncName, job.Args)
-		return e
+		err = fmt.Errorf("Decode args: %v for func: %s  args: %v", err, job.FuncName, job.Args)
+		return err
 	}
 
-	_, err = TryCall(reflectedFunc, reflectedArgs)
+	outValue, err := TryCall(funcValue, inValue)
 	if err != nil {
-		e := fmt.Errorf("Worker try call registerd function: %s %v %v", job.FuncName, err, job.Args)
-		return e
+		err = fmt.Errorf("Worker try call registerd function: %s %v %v", job.FuncName, err, job.Args)
+		return err
 	}
+
+	result, err := utils.GoValuesToYJsonSlice(outValue)
+	if err != nil {
+		err = fmt.Errorf("Decode result: %v for func: %s  args: %v", err, job.FuncName, job.Args)
+		log.Fatalln(err)
+	}
+	log.Println("task result", result)
 
 	return nil
 }
@@ -112,32 +115,31 @@ func FuncExecutor(job *job.Job) error {
 //    argument list).
 // 2. The task func itself returns a non-nil error.
 func TryCall(f reflect.Value, args []reflect.Value) (results []reflect.Value, err error) {
-	defer func() {
-		// Recover from panic and set err.
-		if e := recover(); e != nil {
-			switch e := e.(type) {
-			default:
-				err = errors.New("Invoking task caused a panic")
-
-			case error:
-				err = e
-			case string:
-				err = errors.New(e)
-			}
-		}
-	}()
+	//defer func() {
+	//	// Recover from panic and set err.
+	//	if e := recover(); e != nil {
+	//		switch e := e.(type) {
+	//		default:
+	//			err = errors.New("Invoking task caused a panic")
+	//
+	//		case error:
+	//			err = e
+	//		case string:
+	//			err = errors.New(e)
+	//		}
+	//	}
+	//}()
 
 	results = f.Call(args)
 
 	if len(results) < 2 {
-		// sc_raven.CaptureError(fmt.Errorf("warning!!! wrong async func define"))
+		log.Fatalln(fmt.Errorf("warning!!! wrong async func define"))
 	}
 
 	// If an error was returned by the task func, propagate it
 	// to the caller via err.
-	if !results[1].IsNil() {
+	if !results[len(results)-1].IsNil() {
 		return nil, results[1].Interface().(error)
 	}
-
-	return results, err
+	return
 }

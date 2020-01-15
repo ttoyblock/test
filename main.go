@@ -1,19 +1,17 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
-	"strings"
+	"toolkit/worker/consumer"
 )
 
 func main() {
+	consumer.LaunchConsumer(nil)
 	// fmt.Println("----")
-	// a := make([]int, 0)
+	// a := make([]int, 0())
 	// for _, v := range a {
 	// 	fmt.Println(v)
 	// }
-	json.Marshal()
+	// json.Marshal()
 	// type T struct {
 	// 	A int
 	// 	B string
@@ -36,9 +34,9 @@ func main() {
 	// utils.ListSort(sli, false)
 	// fmt.Println(sli)
 
-	bs, _ := ioutil.ReadFile("/Users/libc/work/gocode/src/wallet-server-go/uid.txt")
-	con := strings.Replace(string(bs), "\n", ",", -1)
-	fmt.Println(con)
+	// bs, _ := ioutil.ReadFile("/Users/libc/work/gocode/src/wallet-server-go/uid.txt")
+	// con := strings.Replace(string(bs), "\n", ",", -1)
+	// fmt.Println(con)
 
 	// a := make([]*Asd, 0)
 	// for i := 0; i < 4; i++ {

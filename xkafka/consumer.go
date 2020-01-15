@@ -2,6 +2,7 @@ package xkafka
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 
@@ -44,7 +45,7 @@ func (this *Consumer) Init(conf map[string]interface{}) {
 
 }
 
-func (this *Consumer) RunByCall(callBack func(message *sarama.ConsumerMessage) error) {
+func (this *Consumer) RunByCall(callBack func(message *sarama.ConsumerMessage) bool) {
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt)
@@ -68,12 +69,11 @@ func (this *Consumer) RunByCall(callBack func(message *sarama.ConsumerMessage) e
 		case msg, ok := <-this.consumer.Messages():
 			{
 				if ok {
-
-					err := callBack(msg)
-					if err == nil {
+					succ := callBack(msg)
+					if succ {
 						this.consumer.MarkOffset(msg, "")
 					} else {
-						fmt.Println(string(msg.Value))
+						log.Fatal(string(msg.Value))
 					}
 
 				} else {

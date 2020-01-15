@@ -1,13 +1,14 @@
 package job
 
+import "github.com/fatih/structs"
+
 type Job struct {
 	FuncName string
-	Args     []FuncArg
+	Args     []string
 	Retry    bool
 	MaxRetry int
 }
 
-type FuncArg struct {
-	Type  string
-	Value interface{}
+func (job *Job) ToMap() map[string]interface{} {
+	return structs.Map(job)
 }
