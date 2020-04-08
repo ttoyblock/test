@@ -12,10 +12,10 @@ import (
 	"fmt"
 	"reflect"
 	"time"
+	"toolkit/cache"
 
 	"gitee.com/ikongjix/go_common/redis_db"
 	"gitee.com/ikongjix/go_common/redis_db/master_db"
-	"gitee.com/ikongjix/kjcore/cache"
 	"github.com/didi/gendry/builder"
 	"github.com/didi/gendry/scanner"
 	"github.com/go-redis/redis"
@@ -52,7 +52,7 @@ func Get(db *sql.DB, instancePtr Model) error {
 	}
 
 	cacheKey := instancePtr.CacheKey()
-	if instancePtr.PkValue() > 0 {
+	if instancePtr.PkValue() > 0 && instancePtr.CacheKey() != "" {
 		err := cache.GetCachedStruct(cacheKey, instancePtr)
 		if err == nil {
 			return nil
@@ -96,11 +96,13 @@ func Get(db *sql.DB, instancePtr Model) error {
 		return err
 	}
 
-	cache.CacheStruct(cacheKey, instancePtr, instancePtr.CacheExpireTime())
+	if instancePtr.CacheKey() != "" {
+		cache.CacheStruct(cacheKey, instancePtr, instancePtr.CacheExpireTime())
+	}
 	return nil
 }
 
-// TxGet get data with props
+// TxGet get with props
 func TxGet(tx *sql.Tx, instancePtr Model, where map[string]interface{}) error {
 	err := DBTxGetOne(tx, instancePtr, where)
 	if err == sql.ErrNoRows {
@@ -141,7 +143,15 @@ type modelHelper func([]int64) []Model
 // target := make([]*user.User)
 // models.Gets(db, []{1, 2, 3, 4}, user.ModelInstanceHelper, &target)
 func Gets(db *sql.DB, ids []int64, helper modelHelper, instaceSlicePtr interface{}) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
 	instances := helper(ids)
+	if instances[0].CacheKey() == "" {
+		return errors.New("cache key is empty")
+	}
+
 	instancesAsInterfaces := make([]interface{}, len(instances))
 	for i, v := range instances {
 		instancesAsInterfaces[i] = v
@@ -282,11 +292,11 @@ func DBTxGetOne(tx *sql.Tx, instancePtr Model, where map[string]interface{}) (er
 }
 
 // DBGetMulti gets multiple records from table pre_forum_thread by condition "where"
-func DBGetMulti(db *sql.DB, instaceSlicePtr interface{}, where map[string]interface{}) (err error) {
+func DBGetMulti(db *sql.DB, instacePtr Model, instaceSlicePtr interface{}, where map[string]interface{}) (err error) {
 	if nil == db {
 		return errors.New("sql.DB object couldn't be nil")
 	}
-	cond, vals, err := builder.BuildSelect("pre_forum_thread", where, nil)
+	cond, vals, err := builder.BuildSelect(instacePtr.TableName(), where, nil)
 	if nil != err {
 		return err
 	}
@@ -299,12 +309,12 @@ func DBGetMulti(db *sql.DB, instaceSlicePtr interface{}, where map[string]interf
 	return err
 }
 
-// DBGetMultitx gets multiple records from table pre_forum_thread by condition "where" in Tx
-func DBGetMultiTx(tx *sql.Tx, instaceSlicePtr interface{}, where map[string]interface{}) (err error) {
+// DBTxGetMulti gets multiple records from table pre_forum_thread by condition "where" in Tx
+func DBTxGetMulti(tx *sql.Tx, instacePtr Model, instaceSlicePtr interface{}, where map[string]interface{}) (err error) {
 	if nil == tx {
 		return errors.New("sql.DB object couldn't be nil")
 	}
-	cond, vals, err := builder.BuildSelect("pre_forum_thread", where, nil)
+	cond, vals, err := builder.BuildSelect(instacePtr.TableName(), where, nil)
 	if nil != err {
 		return err
 	}
@@ -363,7 +373,11 @@ func DBUpdate(db *sql.DB, instancePtr Model, where, data map[string]interface{})
 	if nil != err {
 		return
 	}
-	return result.RowsAffected()
+	aff, err = result.RowsAffected()
+	if aff > 0 {
+		instancePtr.Flush()
+	}
+	return
 }
 
 // DBTxUpdate updates the table in Tx
@@ -379,7 +393,11 @@ func DBTxUpdate(tx *sql.Tx, instancePtr Model, where, data map[string]interface{
 	if nil != err {
 		return
 	}
-	return result.RowsAffected()
+	aff, err = result.RowsAffected()
+	if aff > 0 {
+		instancePtr.Flush()
+	}
+	return
 }
 
 // DBDelete deletes matched records in instance
@@ -395,7 +413,11 @@ func DBDelete(db *sql.DB, instancePtr Model, where map[string]interface{}) (aff 
 	if nil != err {
 		return
 	}
-	return result.RowsAffected()
+	aff, err = result.RowsAffected()
+	if aff > 0 {
+		instancePtr.Flush()
+	}
+	return
 }
 
 // DBTxDelete deletes matched records in instance in Tx
@@ -411,7 +433,11 @@ func DBTxDelete(tx *sql.Tx, instancePtr Model, where map[string]interface{}) (af
 	if nil != err {
 		return
 	}
-	return result.RowsAffected()
+	aff, err = result.RowsAffected()
+	if aff > 0 {
+		instancePtr.Flush()
+	}
+	return
 }
 
 // ------------------------------------------------------------
