@@ -9,9 +9,8 @@ package models_test
 import (
 	"database/sql"
 	"testing"
+	"toolkit/models"
 
-	"gitee.com/ikongjix/kjcore/models"
-	"gitee.com/ikongjix/kjcore/models/postmodel"
 	_ "github.com/go-sql-driver/mysql"
 )
 

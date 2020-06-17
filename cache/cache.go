@@ -3,12 +3,12 @@ package cache
 import (
 	"bytes"
 	"encoding/gob"
-	"errors"
 	"strings"
 	"time"
 
 	"gitee.com/ikongjix/go_common/redis_db/master_db"
 	"github.com/go-redis/redis"
+	"github.com/pkg/errors"
 )
 
 var mGetCachedStructsGetError = errors.New("S Redis: error occurs in MGetCachedStructs Get()")
@@ -19,11 +19,13 @@ func GetCachedStruct(cacheKey string, destStruct interface{}) (err error) {
 	res := master_db.MasterRedis.Get(cacheKey)
 	bs, err := res.Bytes()
 	if err != nil {
+		err = errors.WithStack(err)
 		return
 	}
 
 	decoder := gob.NewDecoder(bytes.NewReader(bs))
-	return decoder.Decode(destStruct)
+	err = decoder.Decode(destStruct)
+	return errors.WithStack(err)
 }
 
 // CacheStruct Use this method to cache structs
@@ -68,7 +70,7 @@ func MGetCachedStructs(keys []string, destStructs []interface{}) ([]int, error) 
 	})
 
 	if err != nil {
-		return nil, mGetCachedStructsPiplinedError
+		return nil, errors.WithStack(mGetCachedStructsPiplinedError)
 	}
 
 	return unCachedIndex, nil

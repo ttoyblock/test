@@ -8,7 +8,6 @@ package models
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"reflect"
 	"time"
@@ -19,9 +18,11 @@ import (
 	"github.com/didi/gendry/builder"
 	"github.com/didi/gendry/scanner"
 	"github.com/go-redis/redis"
+	"github.com/pkg/errors"
 )
 
 const (
+
 	// PropsKeyFormat _
 	PropsKeyFormat = "props:%v:%v" // tablename:id
 )
@@ -46,7 +47,7 @@ type Model interface {
 func Get(db *sql.DB, instancePtr Model) error {
 	if propsModel, ok := instancePtr.(PropsModel); ok {
 		err := LoadProps(propsModel)
-		if err != nil && err != redis.Nil {
+		if err != nil && errors.Cause(err) != redis.Nil {
 			return err
 		}
 	}
@@ -56,13 +57,13 @@ func Get(db *sql.DB, instancePtr Model) error {
 		err := cache.GetCachedStruct(cacheKey, instancePtr)
 		if err == nil {
 			return nil
-		} else if err != redis.Nil {
+		} else if errors.Cause(err) != redis.Nil {
 			return err
 		}
 	}
 
 	err := DBGetOne(db, instancePtr, map[string]interface{}{instancePtr.PkName(): instancePtr.PkValue()})
-	if err == sql.ErrNoRows {
+	if errors.Cause(err) == sql.ErrNoRows {
 		// NOTE:
 		// 理想情况是，在查询不到 row 时，
 		// 1. 返回错误
@@ -105,10 +106,10 @@ func Get(db *sql.DB, instancePtr Model) error {
 // TxGet get with props
 func TxGet(tx *sql.Tx, instancePtr Model, where map[string]interface{}) error {
 	err := DBTxGetOne(tx, instancePtr, where)
-	if err == sql.ErrNoRows {
+	if errors.Cause(err) == sql.ErrNoRows {
 		v := reflect.ValueOf(instancePtr)
 		v.Elem().Set(reflect.Zero(v.Elem().Type()))
-		return sql.ErrNoRows
+		return err
 	}
 
 	if err != nil {
@@ -117,7 +118,7 @@ func TxGet(tx *sql.Tx, instancePtr Model, where map[string]interface{}) error {
 
 	if propsModel, ok := instancePtr.(PropsModel); ok {
 		err = LoadProps(propsModel)
-		if err != nil && err != redis.Nil {
+		if err != nil && errors.Cause(err) != redis.Nil {
 			return err
 		}
 	}
@@ -163,7 +164,7 @@ func Gets(db *sql.DB, ids []int64, helper modelHelper, instaceSlicePtr interface
 	}
 
 	unCachedIndex, err := cache.MGetCachedStructs(keys, instancesAsInterfaces)
-	if err != nil && err != redis.Nil {
+	if err != nil && errors.Cause(err) != redis.Nil {
 		return err
 	}
 	if len(unCachedIndex) > 0 {
@@ -183,7 +184,7 @@ func Gets(db *sql.DB, ids []int64, helper modelHelper, instaceSlicePtr interface
 		if v != nil {
 			if propsModel, ok := v.(PropsModel); ok {
 				err = LoadProps(propsModel)
-				if err != nil && err != redis.Nil {
+				if err != nil && errors.Cause(err) != redis.Nil {
 					return err
 				}
 			}
@@ -211,22 +212,18 @@ func PropsKey(instance PropsModel) string {
 func LoadProps(instance PropsModel) error {
 	propsValue, err := GetProps(instance)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	err = instance.DecodingProps(propsValue)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return errors.WithStack(err)
 }
 
 // GetProps is a function used to get the props of a Model instance
 func GetProps(instance PropsModel) (v []byte, err error) {
 	key := PropsKey(instance)
 	v, err = master_db.MasterRedis.Get(key).Bytes()
-	return
+	return v, errors.WithStack(err)
 }
 
 // SaveProps is a function that used to save the props of a Model instance
@@ -234,12 +231,12 @@ func SaveProps(instance PropsModel) error {
 	key := PropsKey(instance)
 	value, err := instance.EncodingProps()
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
-	master_db.MasterRedis.Set(key, value, 0)
+	err = master_db.MasterRedis.Set(key, value, 0).Err()
 	// TODO: remove - make sure that the cache logic will not cache props info
 	instance.Flush()
-	return nil
+	return errors.WithStack(err)
 }
 
 // DeleteProps is a function used to delete props of a Model instance
@@ -248,7 +245,7 @@ func DeleteProps(instance PropsModel) error {
 	err := master_db.MasterRedis.Del(key).Err()
 	// TODO: remove - make sure that the cache logic will not cache props info
 	instance.Flush()
-	return err
+	return errors.WithStack(err)
 }
 
 // ------------------------------------------------------------
@@ -257,6 +254,10 @@ func DeleteProps(instance PropsModel) error {
 
 // DBGetOne gets one record from table instance by condition "where"
 func DBGetOne(db *sql.DB, instancePtr Model, where map[string]interface{}) (err error) {
+	return errors.WithStack(dbGetOne(db, instancePtr, where))
+}
+
+func dbGetOne(db *sql.DB, instancePtr Model, where map[string]interface{}) (err error) {
 	if nil == db {
 		return errors.New("sql.DB object couldn't be nil")
 	}
@@ -275,6 +276,10 @@ func DBGetOne(db *sql.DB, instancePtr Model, where map[string]interface{}) (err 
 
 // DBTxGetOne gets one record from table pre_forum_thread by condition "where" in Tx
 func DBTxGetOne(tx *sql.Tx, instancePtr Model, where map[string]interface{}) (err error) {
+	return errors.WithStack(dbTxGetOne(tx, instancePtr, where))
+}
+
+func dbTxGetOne(tx *sql.Tx, instancePtr Model, where map[string]interface{}) (err error) {
 	if nil == tx {
 		return errors.New("sql.DB object couldn't be nil")
 	}
@@ -293,6 +298,10 @@ func DBTxGetOne(tx *sql.Tx, instancePtr Model, where map[string]interface{}) (er
 
 // DBGetMulti gets multiple records from table pre_forum_thread by condition "where"
 func DBGetMulti(db *sql.DB, instacePtr Model, instaceSlicePtr interface{}, where map[string]interface{}) (err error) {
+	return errors.WithStack(dbGetMulti(db, instacePtr, instaceSlicePtr, where))
+}
+
+func dbGetMulti(db *sql.DB, instacePtr Model, instaceSlicePtr interface{}, where map[string]interface{}) (err error) {
 	if nil == db {
 		return errors.New("sql.DB object couldn't be nil")
 	}
@@ -311,6 +320,10 @@ func DBGetMulti(db *sql.DB, instacePtr Model, instaceSlicePtr interface{}, where
 
 // DBTxGetMulti gets multiple records from table pre_forum_thread by condition "where" in Tx
 func DBTxGetMulti(tx *sql.Tx, instacePtr Model, instaceSlicePtr interface{}, where map[string]interface{}) (err error) {
+	return errors.WithStack(dbTxGetMulti(tx, instacePtr, instaceSlicePtr, where))
+}
+
+func dbTxGetMulti(tx *sql.Tx, instacePtr Model, instaceSlicePtr interface{}, where map[string]interface{}) (err error) {
 	if nil == tx {
 		return errors.New("sql.DB object couldn't be nil")
 	}
@@ -330,6 +343,11 @@ func DBTxGetMulti(tx *sql.Tx, instacePtr Model, instaceSlicePtr interface{}, whe
 // TODO: 返回ID有问题
 // DBInsert inserts an array of data into table
 func DBInsert(db *sql.DB, instancePtr Model, data []map[string]interface{}) (id int64, err error) {
+	id, err = dbInsert(db, instancePtr, data)
+	return id, errors.WithStack(err)
+}
+
+func dbInsert(db *sql.DB, instancePtr Model, data []map[string]interface{}) (id int64, err error) {
 	if nil == db {
 		return 0, errors.New("sql.DB object couldn't be nil")
 	}
@@ -346,6 +364,11 @@ func DBInsert(db *sql.DB, instancePtr Model, data []map[string]interface{}) (id 
 
 // DBTxInsert inserts an array of data into table in Tx
 func DBTxInsert(tx *sql.Tx, instancePtr Model, data []map[string]interface{}) (id int64, err error) {
+	id, err = dbTxInsert(tx, instancePtr, data)
+	return id, errors.WithStack(err)
+}
+
+func dbTxInsert(tx *sql.Tx, instancePtr Model, data []map[string]interface{}) (id int64, err error) {
 	if nil == tx {
 		return 0, errors.New("sql.DB object couldn't be nil")
 	}
@@ -362,6 +385,11 @@ func DBTxInsert(tx *sql.Tx, instancePtr Model, data []map[string]interface{}) (i
 
 // DBUpdate updates the table
 func DBUpdate(db *sql.DB, instancePtr Model, where, data map[string]interface{}) (aff int64, err error) {
+	aff, err = dbUpdate(db, instancePtr, where, data)
+	return aff, errors.WithStack(err)
+}
+
+func dbUpdate(db *sql.DB, instancePtr Model, where, data map[string]interface{}) (aff int64, err error) {
 	if nil == db {
 		return 0, errors.New("sql.DB object couldn't be nil")
 	}
@@ -382,6 +410,11 @@ func DBUpdate(db *sql.DB, instancePtr Model, where, data map[string]interface{})
 
 // DBTxUpdate updates the table in Tx
 func DBTxUpdate(tx *sql.Tx, instancePtr Model, where, data map[string]interface{}) (aff int64, err error) {
+	aff, err = dbTxUpdate(tx, instancePtr, where, data)
+	return aff, errors.WithStack(err)
+}
+
+func dbTxUpdate(tx *sql.Tx, instancePtr Model, where, data map[string]interface{}) (aff int64, err error) {
 	if nil == tx {
 		return 0, errors.New("sql.DB object couldn't be nil")
 	}
@@ -402,6 +435,11 @@ func DBTxUpdate(tx *sql.Tx, instancePtr Model, where, data map[string]interface{
 
 // DBDelete deletes matched records in instance
 func DBDelete(db *sql.DB, instancePtr Model, where map[string]interface{}) (aff int64, err error) {
+	aff, err = dbDelete(db, instancePtr, where)
+	return aff, errors.WithStack(err)
+}
+
+func dbDelete(db *sql.DB, instancePtr Model, where map[string]interface{}) (aff int64, err error) {
 	if nil == db {
 		return 0, errors.New("sql.DB object couldn't be nil")
 	}
@@ -422,6 +460,11 @@ func DBDelete(db *sql.DB, instancePtr Model, where map[string]interface{}) (aff 
 
 // DBTxDelete deletes matched records in instance in Tx
 func DBTxDelete(tx *sql.Tx, instancePtr Model, where map[string]interface{}) (aff int64, err error) {
+	aff, err = dbTxDelete(tx, instancePtr, where)
+	return aff, errors.WithStack(err)
+}
+
+func dbTxDelete(tx *sql.Tx, instancePtr Model, where map[string]interface{}) (aff int64, err error) {
 	if nil == tx {
 		return 0, errors.New("sql.DB object couldn't be nil")
 	}
